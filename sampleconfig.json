@@ -1,0 +1,22 @@
+{
+    "bridge": {
+        "name": "Homebridge-Dev",
+        "username": "CC:22:3D:E3:CE:39",
+        "port": 51826,
+        "pin": "031-45-154"
+    },
+
+    "description": "Description",
+
+    "platforms": [
+        {
+            "platform": "wireless-sensor-tag",
+            "username": "<<username>>",
+            "password": "<<password>>",
+            "queryFrequency": 60000
+        }
+    ],
+
+    "accessories": [
+    ]
+}

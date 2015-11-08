@@ -1,0 +1,41 @@
+{
+  "name": "homebridge-wireless-tag",
+  "version": "0.0.1",
+  "description": "Homebridge platform plugin for wireless tags (http://wirelesstags.net)", 
+  "note": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "echo \"Error: configure and run homebridge to start\" && exit 1"
+  },
+  "engines": {
+    "node": ">4.0.0",
+    "homebridge": ">=0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rodtoll/homebridge-wireless-tag.git"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "isy",
+    "Home Center",
+    "homekit",
+    "wirelesstag",
+    "wirelesstag.net",
+    "tag",
+    "Siri"
+  ],
+  "dependencies": {
+    "request": "",
+    "restler": "",
+    "xmldoc": "",
+    "unirest": ""
+  },
+  "author": "rodtoll",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/rodtoll/homebridge-wireless-tag/issues"
+  },
+  "homepage": "https://github.com/rodtoll/homebridge-wireless-tag"
+}
