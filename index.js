@@ -162,7 +162,7 @@ WirelessTagAccessory.prototype.handleUpdate = function(deviceData) {
     this.tagType = deviceData.tagType;
     this.temperature = deviceData.temperature;
     this.name = deviceData.name;
-    if(deviceData.cap == undefined) {
+    if(deviceData.cap != undefined) {
         this.humidity = Math.round(deviceData.cap);
     } else {
         this.humidity = 0.0;

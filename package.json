@@ -1,6 +1,6 @@
 {
   "name": "homebridge-wireless-sensor-tag",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Homebridge platform plugin for wireless tags (http://wirelesstags.net)", 
   "note": "",
   "main": "index.js",
