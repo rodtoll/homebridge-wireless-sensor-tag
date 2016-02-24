@@ -1,34 +1,5 @@
 /*
- WIRELESS-SENSOR_TAG
- 
- Homebridge platform for Wireless Sensor Tags. (http://wirelesstags.net/)
- 
- Polls status of the wireless tags on a configurable interval and based on data from the tags determines occupancy of those tags + current temperature in 
- degress celcius. 
- 
- Occupancy is 0 if the tag is inactive or outofrange. Otherwise it is considered occupancy 1.
- 
- NOTE: Currently only supports the temperature tags. If someone wants to donate one of the other tag types happy to add them. :)
- 
- Configuration sample:
- 
-     "platforms": [
-        {
-            "platform": "wireless-sensor-tag",
-            "name": "wireless-sensor-tag",         
-            "username": "user@domain.com",      
-            "password": "password",   
-            "queryFrequency": 20000
-        }
-     ] 
-     
- Fields:
- * platform - Must be set to wireless-sensor-tag
- * name - Up to you. 
- * username - Your wirelesstags.net username
- * password - Your wirelesstags.net password
- * queryFrequency - The amount of time, in ms, between updates. 1000 = 1000ms = 1second. Recommended value > 10000 as temperature and presence don't change
-                    that quickly anyhow.
+ See README.md
  */
 
 var Service, Characteristic, types;
@@ -51,9 +22,19 @@ function WirelessTagPlatform(log,config) {
     this.log = log;
     this.tagMap = {};
     this.tagList = [];
+    this.ignoreList = (config.ignoreList == undefined) ? [] : config.ignoreList;
 }
 
-// Forms a valid request to authenticate against the wireless tag manager. Calls handleResult with a boolean indicating 
+WirelessTagPlatform.prototype.shouldIgnore = function(deviceData) {
+    if(deviceData != undefined && deviceData.name != undefined) {
+        if(this.ignoreList.indexOf(deviceData.name) > -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Forms a valid request to authenticate against the wireless tag manager. Calls handleResult with a boolean indicating
 // success or failure.
 WirelessTagPlatform.prototype.sendAuthentication = function(handleResult) {
     request({
@@ -63,8 +44,12 @@ WirelessTagPlatform.prototype.sendAuthentication = function(handleResult) {
         jar: true,
         gzip: true,
         body: { email: this.username, password: this.password }
-    }, function (error, response, body) {   
-        handleResult(response instanceof Error || response.statusCode != 200);
+    }, function (error, response, body) {
+        if(error) {
+            handleResult(true);
+        } else {
+            handleResult(response.statusCode!=200);
+        }
     });
 }
 
@@ -77,8 +62,12 @@ WirelessTagPlatform.prototype.getTagList = function(handleResult) {
         jar: true,
         gzip: true,
         body: {}
-    }, function (error, response, body) {   
-        handleResult(response instanceof Error || response.statusCode != 200, body);
+    }, function (error, response, body) {
+        if(error) {
+            handleResult(true,body);
+        } else {
+            handleResult(response.statusCode!=200,body);
+        }
     });
 }
 
@@ -98,9 +87,11 @@ WirelessTagPlatform.prototype.refreshTagData = function(complete) {
                         var uuid = body.d[index].uuid;
                         // We haven't seen the tag yet, add it
                         if(that.tagMap[uuid] == null) {
-                            var newTag = new WirelessTagAccessory(that.log,body.d[index]);
-                            that.tagMap[uuid] = newTag;
-                            that.tagList.push(newTag);
+                            if(!that.shouldIgnore(body.d[index])) {
+                                var newTag = new WirelessTagAccessory(that.log, body.d[index]);
+                                that.tagMap[uuid] = newTag;
+                                that.tagList.push(newTag);
+                            }
                         // We have, just update it.
                         } else {
                             that.tagMap[uuid].handleUpdate(body.d[index]);
@@ -171,6 +162,11 @@ WirelessTagAccessory.prototype.handleUpdate = function(deviceData) {
     this.tagType = deviceData.tagType;
     this.temperature = deviceData.temperature;
     this.name = deviceData.name;
+    if(deviceData.cap == undefined) {
+        this.humidity = Math.round(deviceData.cap);
+    } else {
+        this.humidity = 0.0;
+    }
     this.uuid_base = this.uuid;
     
     // Protections to ensure we don't set the current characteristic value whens services are not yet registered.
@@ -178,11 +174,21 @@ WirelessTagAccessory.prototype.handleUpdate = function(deviceData) {
         this.tempService
             .setCharacteristic(Characteristic.CurrentTemperature, this.temperature);    
     }
+
+    if(this.humidityService != null && this.humidityService != undefined) {
+        this.humidityService
+            .setCharacteristic(Characteristic.CurrentRelativeHumidity, this.humidity);
+    }
 }
 
 // Handles getting the temperature in format needed by homebridge. Luckily this is just the raw value in degrees C
 WirelessTagAccessory.prototype.getTemperature = function(callback) {
     callback(null,this.temperature);
+}
+
+// Handles getting the humidity in format needed by homebridge.
+WirelessTagAccessory.prototype.getHumidity = function(callback) {
+    callback(null,this.humidity);
 }
 
 // Translates tag state into an occupancy value. If tag is inactive or out of range occupancy is false
@@ -212,6 +218,12 @@ WirelessTagAccessory.prototype.getServices = function() {
     this.tempService
       .getCharacteristic(Characteristic.CurrentTemperature)
       .on('get', this.getTemperature.bind(this));
+
+    this.humidityService = new Service.HumiditySensor();
+
+    this.humidityService
+        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+        .on('get', this.getHumidity.bind(this));
       
     this.occupancyService = new Service.OccupancySensor();
     
@@ -219,7 +231,7 @@ WirelessTagAccessory.prototype.getServices = function() {
       .getCharacteristic(Characteristic.OccupancyDetected)
       .on('get', this.getOccupancy.bind(this));
 
-    return [this.informationService, this.tempService, this.occupancyService];  
+    return [this.informationService, this.tempService, this.occupancyService, this.humidityService];
 }
 
 module.exports.platform = WirelessTagPlatform;
