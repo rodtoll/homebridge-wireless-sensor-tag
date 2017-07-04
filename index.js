@@ -191,19 +191,6 @@ WirelessTagAccessory.prototype.getHumidity = function(callback) {
     callback(null,this.humidity);
 }
 
-// Translates tag state into an occupancy value. If tag is inactive or out of range occupancy is false
-WirelessTagAccessory.prototype.getOccupancy = function(callback) {
-    var isAway = false;
-    if(this.isOutOfRange == undefined) {
-        isAway = true;
-    } else if(this.isOutOfRange) {
-        isAway = true;
-    } else if(!this.isAlive) {
-        isAway = true;
-    }
-    callback(null,isAway ? Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED : Characteristic.OccupancyDetected.OCCUPANCY_DETECTED);
-}
-
 // Sets up the information, temperature and occupancy services.
 WirelessTagAccessory.prototype.getServices = function() {
     this.informationService = new Service.AccessoryInformation();
@@ -224,14 +211,8 @@ WirelessTagAccessory.prototype.getServices = function() {
     this.humidityService
         .getCharacteristic(Characteristic.CurrentRelativeHumidity)
         .on('get', this.getHumidity.bind(this));
-      
-    this.occupancyService = new Service.OccupancySensor();
-    
-    this.occupancyService
-      .getCharacteristic(Characteristic.OccupancyDetected)
-      .on('get', this.getOccupancy.bind(this));
 
-    return [this.informationService, this.tempService, this.occupancyService, this.humidityService];
+    return [this.informationService, this.tempService, this.humidityService];
 }
 
 module.exports.platform = WirelessTagPlatform;
