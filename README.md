@@ -1,4 +1,16 @@
 # homebridge-wireless-sensor-tag
+# ACTIVE DEVELOPMENT & SUPPORT DISCONTINUED
+I am sad to announce that I am discontinuing support for this homebridge plugin. This means I will no longer be addressing any open bugs, responding to feature requests or 
+releasing new versions. Between work and my home life there simply isn't the time. I will leave the repository online and the 
+package on npm but that is it. As this code is licensed under the MIT license you are of course welcome to branch this code and make it your own and use it in your 
+own projects -- but you do so, as always, with no warranty or support from me. 
+
+I want to thank everyone who helped along the way through questions and issues and code contributions -- your assistance was very much appreciated. And it made the 
+late nights and testing worth it. 
+
+# Old Readme..
+
+If you find a good alternative and want others to know about it then open a new issue and provide a pointer. I might post a link here.
  
 Homebridge platform for Wireless Sensor Tags. (http://wirelesstags.net/)
 
