@@ -1,0 +1,9 @@
+config.json
+/node_modules/*/*
+/persist
+/target
+.uix-dashboard.json
+.uix-secrets
+auth.json
+/accessories
+
