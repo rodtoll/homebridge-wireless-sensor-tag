@@ -27,10 +27,13 @@
     "Siri"
   ],
   "dependencies": {
+    "axios": "^0.21.1",
+    "fetch-cookie": "^0.11.0",
+    "node-fetch": "^2.6.1",
     "request": "",
     "restler": "",
-    "xmldoc": "",
-    "unirest": ""
+    "unirest": "",
+    "xmldoc": ""
   },
   "author": "rodtoll",
   "license": "MIT",
