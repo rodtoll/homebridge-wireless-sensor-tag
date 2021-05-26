@@ -1,0 +1,39 @@
+{
+    "pluginAlias": "wireless-sensor-tag",
+    "pluginType": "platform",
+    "singular": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "userName": {
+                "title": "User Name",
+                "type": "string",
+                "default": "",
+                "minLength": 1,
+                "required": true,
+                "format": "email"
+            },
+            "password": {
+                "title": "Password",
+                "type": "string",
+                "default": "",
+                "minLength": 1,
+                "required": true
+            },
+            "queryFrequency": {
+                "title": "Query Frequency",
+                "type": "integer",
+                "default": 20000,
+                "required": true
+            },
+            "ignoreNames": {
+                "title": "Devices Ignore Pattern",
+                "type": "array",
+                "items": {
+                    "title": "Name to Ignore",
+                    "type": "string"
+                }
+            }
+        }
+    }
+}
