@@ -286,6 +286,10 @@ class WirelessSensorTagV2Platform {
     return (tagInfo.temperature*(9/5)+32);
   }
 
+  getTagTempInC(tagInfo) {
+    return tagInfo.temperature;
+  }
+
   // Updates the state of the tag based on the update
   updateTag(tagInfo) {
     const aid = this.mapTID2AID(tagInfo);
@@ -300,7 +304,7 @@ class WirelessSensorTagV2Platform {
     let batteryLevel = this.getTagBatteryLowCharacteristic(tagInfo);
     let accessory = this.accessoryMap[aid];
 
-    accessory.getService(hap.Service.TemperatureSensor).updateCharacteristic(hap.Characteristic.CurrentTemperature, this.getTagTempInF(tagInfo));
+    accessory.getService(hap.Service.TemperatureSensor).updateCharacteristic(hap.Characteristic.CurrentTemperature, this.getTagTempInC(tagInfo));
     accessory.getService(hap.Service.TemperatureSensor).updateCharacteristic(hap.Characteristic.StatusLowBattery, batteryLevel );
     if(this.isTagReadingHumidity(tagInfo)) {
       accessory.getService(hap.Service.HumiditySensor).updateCharacteristic(hap.Characteristic.CurrentRelativeHumidity, Math.round(tagInfo.cap));
