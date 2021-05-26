@@ -1,319 +1,241 @@
-var request = require("request");
+/*
+ See README.md
+ */
 
-// Plug in name
-const PLUGIN_NAME = "homebridge-wireless-sensor-tag";
+var Service, Characteristic, types;
 
-// Name for the platform
-const PLATFORM_NAME = "wireless-sensor-tag";
+var request = require('request');
 
-// Default update frequency
-const DEFAULT_UPDATE_FREQUENCY_MS = 20000;
-
-// Manufacturer name for accessory properties
-const MANUFACTURER_NAME = "Cao Gadgets LLC";
-
-// Duration that tag should beep when identify is triggered
-const IDENTIFY_BEEP_DURATION = 5;
-
-// Minimum frequency for query
-const MINIMUM_QUERY_FREQUENCY_MS = 20000;
-
-// Suffix to add for temperature sensors
-const SENSOR_SUFFIX_TEMPERATURE = " Temperature";
-
-// Suffix to add for humidity sensors
-const SENSOR_SUFFIX_HUMIDITY = " Humidity";
-
-var hap;
-var Accessory;
-
-// Import all the platfomr pieces we need and register our platform 
-module.exports = (api) => {
-    hap = api.hap;
-    Accessory = api.platformAccessory;
-    api.registerPlatform(PLATFORM_NAME, WirelessSensorTagV2Platform);
+// Handle registration with homebridge
+module.exports = function(homebridge) {
+  Service = homebridge.hap.Service;
+  Characteristic = homebridge.hap.Characteristic;
+  types = homebridge.hapLegacyTypes;
+  homebridge.registerPlatform("homebridge-wireless-sensor-tag", "wireless-sensor-tag", WirelessTagPlatform);
 }
 
-// WirelessSensorTagV2Platform
-//
-// HomeBridge platform for supporting wireless tags from https://wirelesstag.net/.
-//
-// Supports only temperature tags.
-// 
-class WirelessSensorTagV2Platform {
-
-  constructor(log, config, api) {
+// Platform object for the wireless tags. Represents the wireless tag manager
+function WirelessTagPlatform(log,config) {
+	this.username = config.username;
+	this.password = config.password;
+	this.queryFrequency = config.queryFrequency;
     this.log = log;
-    this.api = api;
-    this.accessories = [];
+    this.tagMap = {};
+    this.tagList = [];
+    this.ignoreList = (config.ignoreList == undefined) ? [] : config.ignoreList;
+}
 
-    // Map from the tag uuid to the accessory id
-    this.tagIdToAccessoryId = {};
-
-    // Map accessory from the accessory UUID to the accessory object
-    this.accessoryMap = {};
-
-    // Map accessory id to the internal id for the tag
-    this.accessoryIdToSid = {};
-    
-    // Read configuration values
-    this.userName = config.userName;
-    this.password = config.password;
-    this.ignoreNames = config.ignoreNames;
-
-    if(config.queryFrequency == null || config.queryFrequency == undefined) {
-      this.queryFrequency = DEFAULT_UPDATE_FREQUENCY_MS;
-    } else {
-      if(config.queryFrequency < MINIMUM_QUERY_FREQUENCY_MS) {
-        this.log.error("You specified query frequency less than one second which will spam the server. Setting to minimum of 1s. Reminder, value is in MS, not seconds.")
-        this.queryFrequency = DEFAULT_UPDATE_FREQUENCY_MS;
-      } else {
-        this.queryFrequency = config.queryFrequency;
-      }
-    }
-
-    log.info("Initialization beginning.");
-
-    // Platform plugin finished running, start authentication
-    api.on("didFinishLaunching", () => {
-      this.executeAuthentication();
-    });
-  }
-
-  executeIdentify(displayName, sid) {
-    this.log("%s identified!", displayName);
-    this.makeApiCall('https://www.mytaglist.com/ethClient.asmx/Beep', 
-      { id: sid, beepDuration: IDENTIFY_BEEP_DURATION },
-    (body) => { 
-      this.log.info("Sent beep command to the tag: "+displayName+" sid: "+sid);
-    }, 
-    (error) => { l
-      log.error("Unable to send beep command to the tag: "+displayName+" sid: "+sid+" error: "+error); 
-    }); 
-  }
-
-  // Homebridge platform called when is used to rehydrate previously cached devices.
-  configureAccessory(accessory) {
-    this.log("Configuring accessory "+accessory.displayName+" aid: "+accessory.UUID);
-
-    // Ensure we do not configure the accessory twice
-    if(this.accessoryMap[accessory.UUID] != null) {
-      this.log("Ignoring redundant configure accessory");
-      return;
-    }
-    this.accessoryMap[accessory.UUID] = accessory;
-
-    let sid = this.accessoryIdToSid[accessory.UUID];
-    let displayName = accessory.displayName;
-
-    // Handle 
-    accessory.on("identify", () => {
-        this.executeIdentify(displayName, sid);
-    });
-
-    this.accessories.push(accessory);
-  }
-
-  // Not platform functions
-
-  // Function to make platform POST call with the right parameters
-  makeApiCall(uri, requestBody, handleSuccess, handleError) {
-    request({
-      method: 'POST',
-      uri: uri,
-      json: true,
-      jar: true,
-      gzip: true,
-      body: requestBody
-    }, (error, response, body) => {
-        if(error) {
-          handleError(error);
-        } else {
-          handleSuccess(body);
+WirelessTagPlatform.prototype.shouldIgnore = function(deviceData) {
+    if(deviceData != undefined && deviceData.name != undefined) {
+        if(this.ignoreList.indexOf(deviceData.name) > -1) {
+            return true;
         }
-    });    
-  }
-
-  // Helper function that retrieves the tag list and adds any new tags and updates existing tags
-  getTagList() {
-    this.makeApiCall('https://www.mytaglist.com/ethClient.asmx/GetTagList2', 
-      {},
-      (body) => { 
-        this.parseTagList(body) 
-      }, 
-      (error) => { l
-        log.error("Error getting the tag list: "+error); 
-      });
-  }
-
-  // Executes authentication. Auth is stored in a cookie
-  // Also starts the interval timer which will periodically
-  // call handleQueryTimer.
-  executeAuthentication() {
-    this.makeApiCall('https://www.mytaglist.com/ethAccount.asmx/Signin',
-      { email: this.userName, password: this.password },
-      (body) => {
-        this.log.info("Authenticated to server, querying for tag list");
-        this.getTagList();         
-        setInterval(() => { this.handleQueryTimer(); }, this.queryFrequency);        
-      },
-      (error) => { 
-        log("ERROR: "+error); 
-      });
-  }
-
-  // Called whenever we need to update the tags
-  handleQueryTimer() {
-    this.log.info("Querying server for latest tag info");
-    this.getTagList();
-  }
-
-  // Maps the tag id to the aid
-  mapTID2AID(tagInfo) {
-    if(this.tagIdToAccessoryId[tagInfo.uuid] == null) {
-      this.tagIdToAccessoryId[tagInfo.uuid] = hap.uuid.generate(tagInfo.uuid)
-    } 
-    return this.tagIdToAccessoryId[tagInfo.uuid];
-  }
-
-  // Is this tag new?
-  isTagNew(tagInfo) {
-    const aid = this.mapTID2AID(tagInfo);
-    return (this.accessoryMap[aid] == null);
-  }
-
-  // Checks to see if the tag supports humidity
-  isTagReadingHumidity(tagInfo) {
-    return (tagInfo.cap != undefined);
-  }
-
-  // Checks a tag to see if it should be ignored based on the config.
-  shouldIgnore(tagInfo) {
-    if(this.ignoreNames != null && this.ignoreNames != undefined) {
-      for(let name of this.ignoreNames) {
-        if(tagInfo.name.includes(name)) {
-          return true;
-        }
-      }
     }
     return false;
-  }
-
-  // Parses the tag query results using it to add or 
-  // update existing tags. 
-  parseTagList(body) {
-    for(let tagInfo of body.d) {
-      // We haven't seen the tag yet, add it
-      if(this.isTagNew(tagInfo)) {
-          this.addTag(tagInfo);
-      // We have, just update it.
-      } else {
-          this.updateTag(tagInfo);
-      }
-    } 
-  }  
-
-  // Maps tag info battery info to the right characteristic value
-  getTagBatteryLowCharacteristic(tagInfo) {
-    if(tagInfo.batteryRemaining < 0.40) {
-      return hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
-    } else {
-      return hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL;
-    }
-  }
-
-  // Gets the friendly name of the tag model from the taginfo structure
-  getTagModelName(tagInfo) {
-    switch(tagInfo.tagType) {
-      case 2: return "Basic";
-      case 12: return "MotionSensor";
-      case 13: return "MotionHTU";
-      case 21: return "MotionHTUMem";
-      case 22: return "Solar";
-      case 26: return "LightHTUMem";
-      case 32: return "Cap";
-      case 33: return "CapThermister";
-      case 52: return "Reed_HTU";
-      case 53: return "Reed_noHTU";
-      case 62: return "Thermostat";
-      case 72: return "PIR";
-      case 82: return "WeMo";
-      case 92: return "WebCam";
-      case 102: return "USB";      
-      case 196: return "USB_ZMOD";      
-      case 107: return "USB_ALS";      
-      default: return "Unknown";
-    }
-  }
-
-  // Adds a new tag to the platform based on the tag info
-  addTag(tagInfo) {
-    const aid = this.mapTID2AID(tagInfo);
-
-    if(this.shouldIgnore(tagInfo)) {
-      this.log.info("Ignoring tag: "+tagInfo.name+" "+tagInfo.uuid+" tid: "+" aid: "+aid);
-      return;
-    }
-
-    this.log.info("Adding tag: "+tagInfo.name+" "+tagInfo.uuid+" tid: "+" aid: "+aid);
-
-    const accessory = new Accessory(tagInfo.name, aid);
-
-    // Setup the temp sensor service
-    accessory.addService(hap.Service.TemperatureSensor, tagInfo.name+SENSOR_SUFFIX_TEMPERATURE);
-
-    // Only add humidity state if this tag supports it
-    if(this.isTagReadingHumidity(tagInfo)) {
-      this.log.info("Tag supports humidity");
-      accessory.addService(hap.Service.HumiditySensor, tagInfo.name+SENSOR_SUFFIX_HUMIDITY);
-    }
-
-    this.configureAccessory(accessory); // abusing the configureAccessory here
-
-    // Setup fixed accessory information
-    let accessoryService = accessory.getService(hap.Service.AccessoryInformation);
-    accessoryService.updateCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER_NAME);
-    accessoryService.updateCharacteristic(hap.Characteristic.SerialNumber, tagInfo.uuid);
-    accessoryService.updateCharacteristic(hap.Characteristic.Model, this.getTagModelName(tagInfo) );
-
-    this.updateTag(tagInfo);
-
-    this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-  }
-
-  // Converts tag temperature to F from celcius
-  getTagTempInF(tagInfo) {
-    return (tagInfo.temperature*(9/5)+32);
-  }
-
-  // Updates the state of the tag based on the update
-  updateTag(tagInfo) {
-    const aid = this.mapTID2AID(tagInfo);
-
-    if(this.shouldIgnore(tagInfo)) {
-      this.log.info("Ignoring update for ignored tag: "+tagInfo.name+" "+tagInfo.uuid+" tid: "+" aid: "+aid);
-      return;
-    }
-    this.log.info("Updating tag: "+tagInfo.name+" tid: "+tagInfo.uuid+" aid: "+aid);
-    this.accessoryIdToSid[aid] = tagInfo.slaveId;
-
-    let batteryLevel = this.getTagBatteryLowCharacteristic(tagInfo);
-    let accessory = this.accessoryMap[aid];
-
-    accessory.getService(hap.Service.TemperatureSensor).updateCharacteristic(hap.Characteristic.CurrentTemperature, this.getTagTempInF(tagInfo));
-    accessory.getService(hap.Service.TemperatureSensor).updateCharacteristic(hap.Characteristic.StatusLowBattery, batteryLevel );
-    if(this.isTagReadingHumidity(tagInfo)) {
-      accessory.getService(hap.Service.HumiditySensor).updateCharacteristic(hap.Characteristic.CurrentRelativeHumidity, Math.round(tagInfo.cap));
-      accessory.getService(hap.Service.HumiditySensor).updateCharacteristic(hap.Characteristic.StatusLowBattery, batteryLevel );
-    }  
-    let accessoryService = accessory.getService(hap.Service.AccessoryInformation);
-    accessoryService.updateCharacteristic(hap.Characteristic.FirmwareRevision, String(tagInfo.rev));    
-  }
-
-  // Removes all the accessories
-  removeAccessories() {
-    this.log.info("Removing all accessories");
-    this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, this.accessories);
-    this.accessories.splice(0, this.accessories.length); // clear out the array
-  }
 }
+
+// Forms a valid request to authenticate against the wireless tag manager. Calls handleResult with a boolean indicating
+// success or failure.
+WirelessTagPlatform.prototype.sendAuthentication = function(handleResult) {
+    request({
+        method: 'POST',
+        uri: 'http://www.mytaglist.com/ethAccount.asmx/Signin',
+        json: true,
+        jar: true,
+        gzip: true,
+        body: { email: this.username, password: this.password }
+    }, function (error, response, body) {
+        if(error) {
+            handleResult(true);
+        } else {
+            handleResult(response.statusCode!=200);
+        }
+    });
+}
+
+// Forms a valid request to get the latest tag list. Calls handleResult with a boolean indicating success or failure.
+WirelessTagPlatform.prototype.getTagList = function(handleResult) {
+    request({
+        method: 'POST',
+        uri: 'http://www.mytaglist.com/ethClient.asmx/GetTagList2',
+        json: true,
+        jar: true,
+        gzip: true,
+        body: {}
+    }, function (error, response, body) {
+        if(error) {
+            handleResult(true,body);
+        } else {
+            handleResult(response.statusCode!=200,body);
+        }
+    });
+}
+
+// Does a request to the server to refresh the tag data. Authenticate every time as not sure how often the 
+// authentication requires refreshing. New tags we see get added to the tag map and the tag list. New tags
+// added AFTER startup will be tracked internally but not exposed as a device as frankly I don't know how
+// to do that dynamically.
+WirelessTagPlatform.prototype.refreshTagData = function(complete) {
+    var that = this;
+    // Auth
+    this.sendAuthentication(function(failed) {
+        if(!failed) {
+            // Gets the tag list
+            that.getTagList(function(innerFailure, body) {
+                if(!innerFailure) {
+                    for(var index = 0; index < body.d.length; index++) {
+                        var uuid = body.d[index].uuid;
+                        // We haven't seen the tag yet, add it
+                        if(that.tagMap[uuid] == null) {
+                            if(!that.shouldIgnore(body.d[index])) {
+                                var newTag = new WirelessTagAccessory(that.log, body.d[index]);
+                                that.tagMap[uuid] = newTag;
+                                that.tagList.push(newTag);
+                            }
+                        // We have, just update it.
+                        } else {
+                            that.tagMap[uuid].handleUpdate(body.d[index]);
+                        }
+                    }
+                    complete(true);
+                } else {
+                    that.log("Failed getting tag list");
+                    complete(false);
+                }
+            }); 
+        } else {
+            that.log("Failed authenticating to tag list");
+            complete(false);
+        }   
+    });
+}
+
+// Handles the periodic timer. Reports success or failure and sets the next timer period.
+WirelessTagPlatform.prototype.handleTimer = function() {
+    var that = this;
+    this.log("Starting update of wireless tags from tag manager");
+    this.refreshTagData(function(success) {
+        if(success) {
+            that.log("Updated wireless tag data");
+        } else {
+            that.log("Failed to update wireless tags");
+        }
+        // Hack as I was seeing issues with an undefined queryFrequency. Believe I have fixed it but keeping the 
+        // minimum in to keep us from spamming the service. Also prevents values below 5000ms.
+        if(that.queryFrequency == undefined || that.queryFrequency < 5000) {
+            that.log("Error ... invalid query frequency, setting to 20000ms default");
+            that.queryFrequency = 20000;
+        } else {
+            setTimeout(that.handleTimer.bind(that), that.queryFrequency);
+        }
+    });
+}
+
+// Responds to the homebridge platform through calling callback once list of accessories is identified.
+WirelessTagPlatform.prototype.accessories = function(callback) {
+    var that = this;
+    that.refreshTagData(function(success) {
+        that.log("Completed getting devices. Result="+success); 
+        if(success) {
+            that.log("Authenticated and got tag list. Enumerating tags as accessories");
+            that.handleTimer();
+            callback(that.tagList);
+        } else {
+            that.log("Could not get tags, no accessories exposed");
+            callback([]);
+        }
+    });    
+}
+
+// Represents a single tag
+function WirelessTagAccessory(log,deviceData) {
+    this.log = log;
+    this.handleUpdate(deviceData);
+}
+
+// Refreshes tag data from the device update data
+WirelessTagAccessory.prototype.handleUpdate = function(deviceData) {
+    this.isOutOfRange = deviceData.OutOfRange;
+    this.isAlive = deviceData.alive;
+    this.batteryRemaining = deviceData.batteryRemaining;
+    this.uuid = deviceData.uuid;
+    this.tagType = deviceData.tagType;
+    this.temperature = deviceData.temperature;
+    this.name = deviceData.name;
+    if(deviceData.cap != undefined) {
+        this.humidity = Math.round(deviceData.cap);
+    } else {
+        this.humidity = 0.0;
+    }
+    this.uuid_base = this.uuid;
+    
+    // Protections to ensure we don't set the current characteristic value whens services are not yet registered.
+    if(this.tempService != null && this.tempService != undefined) {
+        this.tempService
+            .setCharacteristic(Characteristic.CurrentTemperature, this.temperature);    
+    }
+
+    if(this.humidityService != null && this.humidityService != undefined) {
+        this.humidityService
+            .setCharacteristic(Characteristic.CurrentRelativeHumidity, this.humidity);
+    }
+}
+
+// Handles getting the temperature in format needed by homebridge. Luckily this is just the raw value in degrees C
+WirelessTagAccessory.prototype.getTemperature = function(callback) {
+    callback(null,this.temperature);
+}
+
+// Handles getting the humidity in format needed by homebridge.
+WirelessTagAccessory.prototype.getHumidity = function(callback) {
+    callback(null,this.humidity);
+}
+
+// Translates tag state into an occupancy value. If tag is inactive or out of range occupancy is false
+WirelessTagAccessory.prototype.getOccupancy = function(callback) {
+    var isAway = false;
+    if(this.isOutOfRange == undefined) {
+        isAway = true;
+    } else if(this.isOutOfRange) {
+        isAway = true;
+    } else if(!this.isAlive) {
+        isAway = true;
+    }
+    callback(null,isAway ? Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED : Characteristic.OccupancyDetected.OCCUPANCY_DETECTED);
+}
+
+// Sets up the information, temperature and occupancy services.
+WirelessTagAccessory.prototype.getServices = function() {
+    this.informationService = new Service.AccessoryInformation();
+
+    this.informationService
+      .setCharacteristic(Characteristic.Manufacturer, "SmartHome")
+      .setCharacteristic(Characteristic.Model, "Wireless Sensor Tag Type="+this.tagType)
+      .setCharacteristic(Characteristic.SerialNumber, this.uuid);   
+
+    this.tempService = new Service.TemperatureSensor();
+      
+    this.tempService
+      .getCharacteristic(Characteristic.CurrentTemperature)
+      .on('get', this.getTemperature.bind(this));
+
+    this.humidityService = new Service.HumiditySensor();
+
+    this.humidityService
+        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+        .on('get', this.getHumidity.bind(this));
+      
+    this.occupancyService = new Service.OccupancySensor();
+    
+    this.occupancyService
+      .getCharacteristic(Characteristic.OccupancyDetected)
+      .on('get', this.getOccupancy.bind(this));
+
+    return [this.informationService, this.tempService, this.occupancyService, this.humidityService];
+}
+
+module.exports.platform = WirelessTagPlatform;
+module.exports.accessory = WirelessTagAccessory;
+
+
+
